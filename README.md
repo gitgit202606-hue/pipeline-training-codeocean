@@ -8,135 +8,142 @@ GeoMX Data: Our CO team is launching GeoMX spatial data for multiple cancer indi
  
 library(Gviz)
 library(GenomicRanges)
-#library(TxDb.Mmusculus.UCSC.mm10.knownGene)
-#library(org.Mm.eg.db)
-#library(dplyr)
-#library(rtracklayer)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(org.Mm.eg.db)
 
-options(ucscChromosomeNames = F)
+# Set the genomic range around the Dnmt3a locus (mm10 coordinates)
+# Dnmt3a is located on Chromosome 12: ~112,610,000 to 112,710,000 bp
+chr <- "chr12"
+start_coord <- 112610000
+end_coord <- 112710000
 
-target_chr <- 'chr12'
-target_start <- 112810000
-target_end <- 112820000 ## DNMT3A Exon 1 promotor TSS region
+# ------------------------------------------------------------------------------
+# 2. Initialize Genomic Axis and Gene Annotation Tracks
+# ------------------------------------------------------------------------------
+# Genome axis track (Scale and coordinate indicator)
+axis_track <- GenomeAxisTrack()
 
-bigwig_dir <- '/projects/users/wilsosx11/251208_PTPN2_public_datasets/GSE123486_raw_data/'
-GSE123486.meta <- read.csv('/projects/users/wilsosx11/251208_PTPN2_public_datasets/GSE123486_metadata.csv')
-
-all_bw_files <- list.files(
-  path = bigwig_dir,
-  pattern = '\\.bw$',
-  full.names = F
+# Gene model track using UCSC mm10 annotations
+txdb <- TxDb.Mmusculus.UCSC.mm10.knownGene
+gene_track <- GeneRegionTrack(
+  txdb, 
+  genome = "mm10", 
+  chromosome = chr, 
+  start = start_coord, 
+  end = end_coord, 
+  name = "Dnmt3a loci",
+  transcriptAnnotation = "symbol",
+  fill = "darkblue"
 )
 
-track_mapping <- data.frame(file_name = all_bw_files) %>% 
-  mutate(sample = sub('_.*', '',file_name)) %>% 
-  inner_join(GSE123486.meta, by = 'sample') %>% 
-  filter(celltype == 'Treg') %>% 
-  mutate(timepoint_num = as.numeric(gsub('h','',timepoint)),
-         genotype_order = ifelse(genotype == 'Ptpn2+/+',1,2)) %>% 
-  arrange(timepoint_num,genotype_order)
+# Rename internal IDs to Gene Symbols
+symbols <- mapIds(org.Mm.eg.db, keys = gene(gene_track), column = "SYMBOL", keytype = "ENTREZID")
 
-atac_tracks <- lapply(1:nrow(track_mapping), function(i) {
- 
-  row <- track_mapping[i, ]
+symbol(gene_track) <- symbols[gene(gene_track)]
+
+# ------------------------------------------------------------------------------
+# 3. Create the FIMO STAT3 Binding Site Track
+# ------------------------------------------------------------------------------
+# Import the FIMO STAT3 bed file (ensure tabix/bgzip processed if necessary)
+stat3_peaks_df <- read.table("/projects/users/wilsosx11/251208_PTPN2_public_datasets/GSE123488_all_STAT3.bed.gz", 
+                             sep="\t", header=FALSE)
+colnames(stat3_peaks_df) <- c("chromosome", "start", "end", "motif")
+
+stat3_peaks_clean <-stat3_peaks_df[
+  !is.na(stat3_peaks_df$chromosome)& 
+    !is.na(stat3_peaks_df$start) & 
+    !is.na(stat3_peaks_df$end), 
+]
+
+# Filter for region of interest
+stat3_peaks_roi <- stat3_peaks_clean[
+  stat3_peaks_clean$chromosome == chr & 
+    stat3_peaks_clean$start >= start_coord & 
+    stat3_peaks_clean$end <= end_coord, 
+]
+
+stat3_gr <- GRanges(
+  seqnames = stat3_peaks_roi$chromosome,
+  ranges = IRanges(start = stat3_peaks_roi$start, end = stat3_peaks_roi$end)
+)
+
+fimo_track <- AnnotationTrack(
+  stat3_gr, 
+  name = "FIMO STAT\nbinding sites", 
+  fill = "darkblue", 
+  col = NULL
+)
+
+# ------------------------------------------------------------------------------
+# 4. Construct ATAC-seq bigWig Signal Tracks
+# ------------------------------------------------------------------------------
+# Vector mapping the files to their respective condition labels in order
+conditions <- c(
+  "Ptpn2+/+ 0h"   = "Ptpn2_WT_0h.bw",
+  "Ptpn2+/- 0h"   = "Ptpn2_HET_0h.bw",
+  "Ptpn2+/+ 24h"  = "Ptpn2_WT_24h.bw",
+  "Ptpn2+/- 24h"  = "Ptpn2_HET_24h.bw",
+  "Ptpn2+/+ 48h"  = "Ptpn2_WT_48h.bw",
+  "Ptpn2+/- 48h"  = "Ptpn2_HET_48h.bw",
+  "Ptpn2+/+ 72h"  = "Ptpn2_WT_72h.bw",
+  "Ptpn2+/- 72h"  = "Ptpn2_HET_72h.bw"
+)
+
+bw_dir <- "/projects/users/wilsosx11/251208_PTPN2_public_datasets/GSE123486_raw_data/"
+
+# Programmatically generate tracks
+data_tracks <- list()
+for (i in seq_along(conditions)) {
+  label <- names(conditions)[i]
+  file_path <- file.path(bw_dir, conditions[i])
   
-  track_color <- ifelse(row$genotype == 'Ptpn2+/+', "darkblue",'red')
-  track_label <- paste0(row$genotype, '', row$timepoint, ' Il6 stimulation')
-  
-  DataTrack(
-    range = row$file_path,
-    genome = 'mm10',
-    name = track_label,
-    type = 'mountain',
-    col.mountain = track_color,
-    fill.mountain = c(track_color,track_color),
-    ylim = c(0,5)
+  # Set up track plotting properties matching paper visualization aesthetics
+  data_tracks[[label]] <- DataTrack(
+    range = file_path, 
+    genome = "mm10", 
+    type = "horizon",             # Polygon-filled look
+    chromosome = chr, 
+    name = label,
+    fill.mountain = c("#F2A7A7", "#E27B7B"), # Replicates the subtle pink/violet gradient filling
+    col.mountain = "#4B92DB",                # Soft blue boundary tracing
+    ylim = c(0, 150)                         # Y-axis scaling to 150
   )
-  
-})
+}
 
-axisTrack <- GenomeAxisTrack()
-
-fimo_ranges = GRanges(
-  seqnames = target_chr,
-  ranges = IRanges(
-    start = c(112813500, 112817200),
-    end = c(112813515, 112817215)
-  ),
-  
-  id = c('STAT3 Site 1','STAT3 Site 2')
+# ------------------------------------------------------------------------------
+# 5. Compile and Render Panel D
+# ------------------------------------------------------------------------------
+# Combine all structural and genomic tracks into standard list
+track_list <- c(
+  axis_track,
+  data_tracks[["Ptpn2+/+ 0h"]],
+  data_tracks[["Ptpn2+/- 0h"]],
+  data_tracks[["Ptpn2+/+ 24h"]],
+  data_tracks[["Ptpn2+/- 24h"]],
+  data_tracks[["Ptpn2+/+ 48h"]],
+  data_tracks[["Ptpn2+/- 48h"]],
+  data_tracks[["Ptpn2+/+ 72h"]],
+  data_tracks[["Ptpn2+/- 72h"]],
+  fimo_track,
+  gene_track
 )
 
-fimoTrack = AnnotationTrack(
-  range = fimo_ranges,
-  genome = 'mm10',
-  name = 'FIMO STAT3',
-  fill = 'black',
-  col = 'black',
-  shape = 'box',
-  showFeatureId = T,
-  fontcolor.feature = 'black',
-  fontsize.feature = 8
-)
-
-geneTrack = UcscTrack(
-  genome = 'mm10',
-  chromosome = target_chr,
-  track = 'refGene',
-  from = target_start,
-  to = target_end,
-  trackType =  'GeneRegionTrack',
-  rxtRetrieveTranscripts = T,
-  showId=T,
-  geneSymbol = T,
-  name = 'Dnmt3a Locus',
-  fill = 'darkgray',
-  col = 'black'
-)
-
-all_track <- c(
-  list(axis_track),
-  atac_tracks,
-  list(fimoTrack,geneTrack)
-)
-
-track_sizes = c(1,rep(2,length(atac_tracks)),1,1.5)
-
-png('~/project_analysis/PTPN2i/20260706_PTPN2i_scRNA_paper_swyz/Panel_D_Dnmt31_Fixed.png',width = 1600,
-    height = 750,res = 120)
-
+# Plot track layout
 plotTracks(
-  all_track,
-  from = target_start,
-  to = target_end,
-  chromosome = target_chr,
-  sizes = track_sizes,
-  background.title = 'transparent',
-  col.title = 'black',
-  col.axis = 'black'
-
+  track_list,
+  from = start_coord,
+  to = end_coord,
+  chromosome = chr,
+  sizes = c(1, rep(1.5, 8), 0.8, 1.2), # Control height proportions
+  background.title = "white",
+  col.title = "black",
+  col.axis = "black",
+  cex.title = 0.8,
+  title.width = 3.5
 )
 
-dev.off()
-
-> geneTrack = UcscTrack(
-+   genome = 'mm10',
-+   chromosome = target_chr,
-+   track = 'refGene',
-+   from = target_start,
-+   to = target_end,
-+   trackType =  'GeneRegionTrack',
-+   rxtRetrieveTranscripts = T,
-+   showId=T,
-+   geneSymbol = T,
-+   name = 'Dnmt3a Locus',
-+   fill = 'darkgray',
-+   col = 'black'
-+ )
-Error in if (file == "" || length(file) == 0) stop("empty or no content specified") : 
-  missing value where TRUE/FALSE needed
-
-
+Error in validObject(.Object) : 
+  invalid class "ReferenceDataTrack" object: The referenced file '/projects/users/wilsosx11/251208_PTPN2_public_datasets/GSE123486_raw_data//Ptpn2_WT_0h.bw' does not exist
 
 
 
