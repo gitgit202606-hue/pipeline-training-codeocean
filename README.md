@@ -18,3 +18,19 @@ and impact we'd like to bring . maybe extend to toher TA and usecase
 3. co-expression, really data by data. gold standard is protein stain. tell the ODR protein stain is necessary to determine. 
 also mention this in cart meeting, ask them to confirm if the target they are interested are included!
 <img width="715" height="152" alt="image" src="https://github.com/user-attachments/assets/539cde1f-ec98-4afe-a28b-8c346555ad74" />
+
+
+
+Key Findings:
+
+The analysis centered on 3 PC and one CRC dataset to evaluate the TME and tumor-infiltrating lymphocytes (TILs).
+
+T-Cell Phenotypes: Tumor in both PC and CRC exhibited an increase in exhausted and terminal CD8+ T populations. Concurrently, a decrease in CD8 progenitor cells and an increase in effector memory CD+8 cells were observed.
+
+Inflammatory Heterogeneity: Hallmark inflammatory profiling revealed varied TME states; with certain tumors displayed elevated inflammatory signaling, indicative of an inflamed microenvironment.
+
+Homeostatic Disconnect: A signaling starvation state was observed in IL-7 and IL-15. While TILs maintain  high receptor density and the intracellular machinery to respond (as evidenced by high enrichment scores from HCD analysis), the TME is depleted of these essential ligands.
+
+   IL-21 axis evaluation: IL-21R expression is low but preserved in CD8+ effector cells. This suggests that     these cells remain responsive to IL-21, providing a therapeutic window to prevent terminal exhaustion  through targeted signaling.
+<img width="1521" height="172" alt="image" src="https://github.com/user-attachments/assets/6622e91d-c0e3-4f22-9912-d21820f9a06a" />
+
